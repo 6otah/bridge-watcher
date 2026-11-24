@@ -1,4 +1,4 @@
-//! Store invariants (`docs/ARCHITECTURE.md` section 15.2) on a real SQLite file.
+//! Store invariants on a real SQLite file.
 //!
 //! Raw SQL goes through a second connection to the same file, so the tests can
 //! attack the schema the way a buggy writer would.
@@ -838,7 +838,7 @@ fn transfers_view_states() {
         2
     );
 
-    // A rollback of the receive un-matches the transfer (ADR 0008).
+    // A rollback of the receive un-matches the transfer.
     db.store
         .apply_scan(
             SOLANA,

@@ -1,14 +1,13 @@
-//! Chain-agnostic ingestor tick: finalize, then scan the unfinalized tail (phase P3).
+//! Chain-agnostic ingestor tick: finalize, then scan the unfinalized tail.
 //!
 //! One [`Ingestor`] drives one [`ChainSource`] and one chain's rows in the
 //! store. Each tick reads the heights, finalizes `(cursor, F]` with
 //! finalized-commitment scans, and, only when the cursor has reached `F`,
-//! re-derives the unfinalized tail `(F, T]` (`docs/ARCHITECTURE.md` section
-//! 6.6). There is no reorg detector: a reorg is a different scan result for
-//! the same range, and `Store::apply_scan` deletes what the new result no
-//! longer holds.
+//! re-derives the unfinalized tail `(F, T]`. There is no reorg
+//! detector: a reorg is a different scan result for the same range,
+//! and `Store::apply_scan` deletes what the new result no longer holds.
 //!
-//! Failure policy (section 12): [`SourceError::Lagging`] ends the tick early
+//! Failure policy: [`SourceError::Lagging`] ends the tick early
 //! and is healthy; other source errors back off; store errors are fatal and
 //! returned from [`Ingestor::run`].
 
@@ -109,7 +108,7 @@ impl<S: ChainSource> Ingestor<S> {
         }
     }
 
-    /// Runs one tick (section 6.6) at wall-clock time `now`.
+    /// Runs one tick at wall-clock time `now`.
     ///
     /// Phase A scans `(cursor, F]` at finalized commitment, at most
     /// `max_scans_per_tick` times; every scan commits on its own. Phase B
@@ -219,7 +218,7 @@ impl<S: ChainSource> Ingestor<S> {
     /// call either commits or rolls back.
     ///
     /// # Errors
-    /// Returns `Err` only for a [`StoreError`], which is fatal (ADR 0010).
+    /// Returns `Err` only for a [`StoreError`], which is fatal.
     /// Cancellation returns `Ok(())`.
     pub async fn run(self, cancel: CancellationToken) -> Result<(), StoreError> {
         let component = self.component();
@@ -288,7 +287,7 @@ impl<S: ChainSource> Ingestor<S> {
 ///
 /// The first run also records `start_time`, the chain time of the last block at
 /// or below `final_height` (`ChainSource::time_at_or_before`), in the same
-/// store call as the cursor. It never changes (ADR 0013).
+/// store call as the cursor. It never changes.
 ///
 /// If a cursor exists and `start_height` is `Some` with another value, the
 /// stored value wins and a warning is logged.

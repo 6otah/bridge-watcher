@@ -1,9 +1,8 @@
-//! EVM chain source: alloy client, log filter and log decoding for Base (phase P4).
+//! EVM chain source: alloy client, log filter and log decoding for Base.
 //!
 //! [`EvmSource`] reads `MessageSent` and `MessageReceived` logs of
 //! MessageTransmitterV2 with `eth_getLogs` and turns the relevant ones into
-//! [`ChainEvent`]s (`docs/ARCHITECTURE.md` sections 4.5 and 6.4). The burn
-//! record is `MessageSent`, not `DepositForBurn` (ADR 0006).
+//! [`ChainEvent`]s. The burn record is `MessageSent`, not `DepositForBurn`.
 //!
 //! What counts as relevant (S4 of the scan contract):
 //! - a burn: the message `sender` is TokenMessengerV2 and the source domain is

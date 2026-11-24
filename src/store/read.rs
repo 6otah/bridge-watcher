@@ -17,7 +17,7 @@ pub enum TransferState {
     /// the time the receive would have happened.
     Attested,
     /// Attestation complete, no receive in the database, but the receive could
-    /// have happened before the destination window began (ADR 0013): its
+    /// have happened before the destination window began: its
     /// absence is not observable.
     PreWindow,
     /// Receive seen.

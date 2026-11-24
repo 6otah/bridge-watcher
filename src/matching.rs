@@ -2,7 +2,7 @@
 //!
 //! Invariants: a burn gets at most one Iris message, and a message goes to at
 //! most one burn. Messages match only when all source-written fields are equal,
-//! and an assigned nonce never moves to another burn (ADR 0007).
+//! and an assigned nonce never moves to another burn.
 
 use crate::domain::{BurnMessage, Bytes32, Mode};
 

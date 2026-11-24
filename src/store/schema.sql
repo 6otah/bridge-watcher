@@ -3,7 +3,7 @@ CREATE TABLE chain_state (
     domain              INTEGER PRIMARY KEY,          -- CCTP domain id
     name                TEXT    NOT NULL,             -- config name, e.g. 'base'
     start_height        INTEGER NOT NULL,             -- first height in scope; never changes
-    start_time          INTEGER NOT NULL,             -- chain time of the last block <= start_height - 1; never changes (ADR 0013)
+    start_time          INTEGER NOT NULL,             -- chain time of the last block <= start_height - 1; never changes
     final_height        INTEGER NOT NULL,             -- the cursor (I1, I2)
     observed_finalized  INTEGER,                      -- last finalized height read from RPC
     observed_head       INTEGER,                      -- last head height read from RPC
@@ -147,7 +147,7 @@ CREATE TRIGGER receives_final_immutable BEFORE UPDATE OF
 ON receives WHEN OLD.finalized = 1
 BEGIN SELECT RAISE(ABORT, 'invariant I3: finalized receive rows are immutable'); END;
 
--- Matching (ADR 0008). A transfer exists from the moment of the burn.
+-- Matching. A transfer exists from the moment of the burn.
 CREATE VIEW transfers AS
 SELECT
     b.id AS burn_id, r.id AS receive_id,

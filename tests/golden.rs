@@ -1,4 +1,4 @@
-//! Golden end-to-end tests (`docs/ARCHITECTURE.md` section 15.6).
+//! Golden end-to-end tests.
 //!
 //! Real mainnet fixtures go through the real decoders (`event_from_log`,
 //! `events_from_transaction`), the real ingestors and sources, the real

@@ -1,4 +1,4 @@
-//! Monitor checks (design section 15.5). Most checks run through the pure
+//! Monitor checks. Most checks run through the pure
 //! `evaluate` on hand-built snapshots; the SQL-filtered checks (mismatch,
 //! duplicate, orphan, latency window) run on a real in-memory store.
 
@@ -961,7 +961,7 @@ fn snapshot_rollbacks_are_limited_to_the_last_day() {
 }
 
 // ---------------------------------------------------------------------------
-// Alert-capable candidate lists and truncation (design section 9.1)
+// Alert-capable candidate lists and truncation
 // ---------------------------------------------------------------------------
 
 fn nonce_u32(i: u32) -> Bytes32 {
@@ -1188,7 +1188,7 @@ fn monitor_run_future_is_send() {
 }
 
 // ---------------------------------------------------------------------------
-// Coverage window (ADR 0013)
+// Coverage window
 // ---------------------------------------------------------------------------
 
 /// A store whose Solana window starts at `solana_start_time`, with one

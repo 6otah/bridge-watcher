@@ -1,7 +1,7 @@
 //! Alert delivery: the [`AlertSink`] trait, the Telegram and log sinks, and the
 //! outbox loop [`Notifier`].
 //!
-//! Delivery is at-least-once (ADR 0009): an alert is marked delivered only
+//! Delivery is at-least-once: an alert is marked delivered only
 //! after the sink accepted it, so a crash between send and mark can repeat one
 //! message.
 //!

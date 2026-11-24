@@ -1,4 +1,4 @@
-//! Ingestion, reorg and restart tests (`docs/ARCHITECTURE.md` section 15.3)
+//! Ingestion, reorg and restart tests
 //! with the scripted `FakeChain` and a real SQLite file.
 
 mod common;

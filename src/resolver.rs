@@ -1,13 +1,12 @@
 //! The attestation resolver: polls Iris for pending burns and classifies
 //! orphan receives.
 //!
-//! Burn polling (design section 7.1): each due source transaction is asked
+//! Burn polling: each due source transaction is asked
 //! from Iris once; the decoded messages are paired with the stored burns by
 //! [`assign_iris_messages`] and the result is written in one store
-//! transaction under the write-once nonce rule. Orphan verification (section
-//! 7.2, ADR 0012): a final receive without a burn is looked up in Iris by
-//! nonce, the source transaction is read from its chain, and the pure
-//! [`classify_orphan`] decides whether an equal on-chain burn exists.
+//! transaction under the write-once nonce rule. Orphan verification: a final
+//! receive without a burn is looked up in Iris by nonce, the source transaction
+//! is read from its chain, and the pure [`classify_orphan`] decides whether an equal on-chain burn exists.
 //!
 //! Invariants:
 //! - After HTTP 429 no Iris call is made until the lockout has passed.
@@ -162,7 +161,7 @@ pub struct StoredEqual {
     pub other_unfinal: u32,
 }
 
-/// The decision table of design section 7.2 for one lookup. Pure.
+/// The decision table for one lookup. Pure.
 ///
 /// `evidence` is the `inspect_tx` result for the Iris source tx (`None` if the
 /// chain does not know it, or if it was not asked). `stored`: our stored

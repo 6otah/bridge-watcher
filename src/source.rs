@@ -1,7 +1,7 @@
 //! Chain access contract: [`ChainSource`], [`TxInspector`], [`ScanResult`],
 //! [`SourceError`] and the [`Chains`] router.
 //!
-//! Scan contract (`docs/ARCHITECTURE.md` section 6.3). For
+//! Scan contract. For
 //! `scan(after, up_to, commitment)`:
 //!
 //! - S1 Range: `after < complete_through <= up_to`, and every event has
@@ -76,8 +76,8 @@ pub trait ChainSource: Send + Sync + 'static {
         up_to: u64,
         commitment: Commitment,
     ) -> impl Future<Output = Result<ScanResult, SourceError>> + Send;
-    /// What this chain says about one transaction (orphan verification,
-    /// design section 7.2). `Ok(None)`: the chain does not know the tx
+    /// What this chain says about one transaction (orphan verification).
+    /// `Ok(None)`: the chain does not know the tx
     /// (Solana: it is not finalized either, or the id is not a signature).
     ///
     /// # Errors
@@ -89,7 +89,7 @@ pub trait ChainSource: Send + Sync + 'static {
     ) -> impl Future<Output = Result<Option<TxEvidence>, SourceError>> + Send;
     /// Chain time of the last existing block at or below `height`: returns
     /// `(block height, unix seconds)`. Used once, by `init_cursor`, to record
-    /// `chain_state.start_time` (coverage rule, ADR 0013).
+    /// `chain_state.start_time` (coverage rule).
     ///
     /// EVM: the header timestamp of `height`. Solana: `getBlockTime(slot)`;
     /// on a skipped slot or a null answer it steps down one slot, at most 1000

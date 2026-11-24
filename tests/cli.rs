@@ -1,4 +1,4 @@
-//! `status` and `transfers` output (`docs/ARCHITECTURE.md` section 15.7) and
+//! `status` and `transfers` output and
 //! the binary's exit codes. Offline: the binary is only run for commands that
 //! read a local database.
 

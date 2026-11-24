@@ -1,13 +1,13 @@
 //! Monitor: pure rule evaluation ([`evaluate`]) and the loop that syncs the
 //! results into the `alerts` table ([`Monitor`]).
 //!
-//! Principle (design section 9.1): absence is claimed only after looking. A
+//! Principle: absence is claimed only after looking. A
 //! "missing" condition needs evidence that the relevant source was read after
 //! the deadline: `last_polled_at` for Iris, `caught_up_at` of the destination
 //! chain. `evaluate` is a pure function of the [`MonitorSnapshot`], so every
 //! rule is tested with hand-built snapshots.
 //!
-//! Truncation (design sections 9.1 and 9.3): every candidate list of the
+//! Truncation: every candidate list of the
 //! snapshot may be cut at `snapshot_limit`. [`evaluate`] reports which alert
 //! kinds it saw completely, so `sync_alerts` resolves only those, and it
 //! raises `monitor_truncated` for each cut list.
@@ -129,7 +129,7 @@ fn direction(source: Domain, destination: Domain, m: Mode) -> String {
     format!("{source}->{destination} {m:?}")
 }
 
-/// Runs every check of design section 9.2 over `snapshot`. Pure: the same
+/// Runs every check over `snapshot`. Pure: the same
 /// snapshot gives the same evaluation. Conditions are sorted by
 /// `(kind, subject)` and de-duplicated on that key.
 ///
@@ -184,7 +184,7 @@ pub fn evaluate(snapshot: &MonitorSnapshot, cfg: &MonitorConfig) -> Evaluation {
         let Some(caught_up) = dest.caught_up_at else {
             continue;
         };
-        // Coverage rule (ADR 0013): the receive may have happened before the
+        // Coverage rule: the receive may have happened before the
         // destination window began, so its absence proves nothing.
         if a.burn_time < dest.start_time + COVERAGE_MARGIN_SECS {
             continue;

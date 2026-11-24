@@ -1,4 +1,4 @@
-//! Solana source tests (`docs/ARCHITECTURE.md` sections 15.1 and 15.3): the
+//! Solana source tests: the
 //! trust rules of `events_from_transaction` on the real fixtures, batch
 //! planning, the request JSON, and the scan loop over a fake node.
 
@@ -106,7 +106,7 @@ fn raw_data(tx: &mut Value, n: usize) -> Vec<u8> {
         .unwrap()
 }
 
-// ---- events_from_transaction on the real fixtures (section 15.1, F8) ----
+// ---- events_from_transaction on the real fixtures ----
 
 #[test]
 fn solana_decodes_burn_fixture_v1_tx() {
@@ -877,7 +877,7 @@ async fn solana_inspect_tx_of_a_failed_tx_has_no_burns() {
     assert_eq!((ev.height, ev.burns.len()), (1005, 0));
 }
 
-// ---- ingestion with the Solana source (section 15.3) ----
+// ---- ingestion with the Solana source ----
 
 struct Rig {
     _dir: TempDir,

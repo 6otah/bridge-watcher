@@ -1,9 +1,9 @@
-//! Solana chain source: JSON-RPC client, signature paging, batch planning and transaction decoding (phase P5).
+//! Solana chain source: JSON-RPC client, signature paging, batch planning and transaction decoding.
 //!
 //! Solana has no `eth_getLogs`. [`SolanaSource`] lists the signatures of the
 //! CCTP MessageTransmitterV2 program, fetches the transactions of a batch of
 //! whole slots, and decodes the Anchor `emit_cpi!` events found in their inner
-//! instructions (`docs/ARCHITECTURE.md` sections 4.6 and 6.5, ADR 0002).
+//! instructions.
 //!
 //! - [`rpc`]: JSON-RPC client and serde types.
 //! - [`plan`]: pure batch planning over whole slots.
@@ -325,7 +325,7 @@ impl<R: SolanaRpcApi> ChainSource for SolanaSource<R> {
         Ok(Heights { finalized, head })
     }
 
-    /// Scans whole slots of `(after, up_to]` (section 6.5).
+    /// Scans whole slots of `(after, up_to]`.
     ///
     /// A finalized scan fetches each transaction at `finalized`. If the node
     /// does not have one yet, the scan stops before that slot and reports the

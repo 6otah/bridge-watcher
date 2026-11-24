@@ -1,5 +1,5 @@
-//! Iris parsing, the resolver and the attestation SQL (design sections 15.4
-//! and 15.2: `store_nonce_is_write_once`). Offline: `FakeIris` and
+//! Iris parsing, the resolver and the attestation SQL
+//! (including `store_nonce_is_write_once`). Offline: `FakeIris` and
 //! `FakeInspector` script the network; the store is a real SQLite file.
 
 mod common;
@@ -718,7 +718,7 @@ async fn iris_429_in_orphan_phase_pauses_burn_polling_too() {
 }
 
 // ---------------------------------------------------------------------------
-// classify_orphan: the decision table of design section 7.2
+// classify_orphan: the decision table
 // ---------------------------------------------------------------------------
 
 fn cursor(start: u64, finalized: u64, scanned_head: Option<u64>) -> ChainCursor {

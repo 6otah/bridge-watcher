@@ -2,19 +2,18 @@
 //!
 //! One [`Store`] owns one `rusqlite::Connection`. Its methods are synchronous
 //! domain operations. [`SharedStore`] shares it between tokio tasks and runs
-//! each call on the blocking pool (ADR 0004).
+//! each call on the blocking pool.
 //!
 //! The schema (`schema.sql`) is applied when `PRAGMA user_version` is 0 and
-//! then set to 1. Any other version is rejected. The invariants I1-I7 of
-//! `docs/ARCHITECTURE.md` section 6.2 are enforced by [`Store::apply_scan`]
-//! and by triggers that protect final rows.
+//! then set to 1. Any other version is rejected. The invariants I1-I7 are
+//! enforced by [`Store::apply_scan`] and by triggers that protect final rows.
 //!
 //! Rules for SQL in this module:
 //! - Never use `OR REPLACE` or `REPLACE`. A replace deletes the conflicting
 //!   row, and a final row must never be deleted (I3). `configure` also turns
 //!   on `recursive_triggers`, so the protection triggers fire for REPLACE as a
 //!   second line of defence.
-//! - Write only your own columns (section 5.2 of the design), with targeted
+//! - Write only your own columns, with targeted
 //!   `UPDATE ... SET`.
 
 mod alerts;
@@ -45,14 +44,14 @@ const SCHEMA: &str = include_str!("schema.sql");
 const SCHEMA_VERSION: i64 = 2;
 
 /// Slack, in seconds, for clock differences between chains in the coverage
-/// rule (ADR 0013): a missing receive is claimed only for a burn with
+/// rule: a missing receive is claimed only for a burn with
 /// `block_time >= destination start_time + COVERAGE_MARGIN_SECS`. The
 /// `transfers` view in `schema.sql` holds the same number as a literal; a test
 /// keeps them equal.
 pub const COVERAGE_MARGIN_SECS: i64 = 60;
 
 /// Database failure. Every variant is fatal for the process: a restart
-/// replays safely (ADR 0010).
+/// replays safely.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
     /// SQLite or driver error, including a trigger abort.

@@ -1,4 +1,4 @@
-//! Scripted fake chain for ingestion tests (phase P3).
+//! Scripted fake chain for ingestion tests.
 //!
 //! [`FakeChain`] implements `ChainSource` over a table `height -> events`.
 //! Tests change the table between ticks to simulate reorgs, make it fail on

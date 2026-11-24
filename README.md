@@ -4,7 +4,7 @@ A read-only watcher for [Circle CCTP V2](https://developers.circle.com/cctp) USD
 
 It reads both chains, stores every burn and every receive in SQLite, joins them into transfers, handles finality and reorgs, and raises alerts when a transfer looks late, stuck or wrong. It holds no keys, signs nothing and never moves funds: it only calls read RPC methods and the public Circle attestation API (Iris), and optionally sends Telegram messages.
 
-This is Stage 1 of a larger project. The full design is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+This is Stage 1 of a larger project.
 
 ## Architecture
 
@@ -30,7 +30,7 @@ The resolver also reads both chains to verify receives that have no burn (see "O
 
 What counts as an event:
 
-- Base burn: the `MessageSent` log of MessageTransmitterV2, sent by TokenMessengerV2 towards Solana (ADR 0006). Base receive: the `MessageReceived` log from Solana's token messenger.
+- Base burn: the `MessageSent` log of MessageTransmitterV2, sent by TokenMessengerV2 towards Solana. Base receive: the `MessageReceived` log from Solana's token messenger.
 - Solana burn: the `DepositForBurn` event; Solana receive: the `MessageReceived` event. Both are read from inner instructions of CCTP programs. An event counts only if the transaction succeeded, the instruction is an inner instruction, and its program id (resolved through address lookup tables) is the CCTP program. Other programs emit events with the same tag and are ignored.
 
 Not in scope: other CCTP domains, CCTP V1, relaying or claiming, light-client verification, a web UI.
@@ -51,15 +51,15 @@ There is no reorg detector. A reorg shows up as a different scan result for the 
 - **The cursor moves with its rows.** A scan's rows, its deletions and the cursor update are one SQLite transaction, and the cursor moves only if it still has the value the scan started from (compare-and-swap). If two processes ran on one database, only competing final scans would fail fast (`CursorMoved`); their tail scans, resolvers and monitors are not guarded. Run one instance per database.
 - **A crash at any point is safe.** After a restart the next scan starts from the stored cursor. Events are keyed by `(domain, tx, index)`, so a replay updates rows and never duplicates them. A test fails the ingestor before each commit and checks that the final database equals a run without a failure.
 
-On Solana the cursor is a slot, and a scan always ends at a slot boundary. Final scans ask the node to prove it has reached the target slot (`minContextSlot`) and fetch each transaction at `finalized` commitment. See ADR 0001 and ADR 0002.
+On Solana the cursor is a slot, and a scan always ends at a slot boundary. Final scans ask the node to prove it has reached the target slot (`minContextSlot`) and fetch each transaction at `finalized` commitment.
 
 ## Why matching needs Iris
 
-A burn and its receive are joined by `(source domain, nonce)`. But the nonce is **assigned off-chain by Circle**: the source chain writes a zero nonce, and Iris fills it in when it attests the message. So a burn gets its nonce only after the resolver asks Iris, which matches the Iris message to the stored burn by every source-written field (ADR 0007). The nonce is write-once. The join of burn and receive is a SQL view, not stored state, so a rollback on either side un-matches automatically (ADR 0008).
+A burn and its receive are joined by `(source domain, nonce)`. But the nonce is **assigned off-chain by Circle**: the source chain writes a zero nonce, and Iris fills it in when it attests the message. So a burn gets its nonce only after the resolver asks Iris, which matches the Iris message to the stored burn by every source-written field. The nonce is write-once. The join of burn and receive is a SQL view, not stored state, so a rollback on either side un-matches automatically.
 
 ### Orphan receives
 
-A final receive with no burn is an orphan. For each one the resolver uses Iris only to find the source transaction. It then reads the source chain itself and checks that the transaction contains a burn equal to the attested message (ADR 0012). No equal burn means value was minted without a matching on-chain burn (`iris_mismatch`); an equal burn that we already hold, final, under another nonce means the same burn was attested and minted twice (`double_mint`); a transaction the chain cannot show, or a nonce Iris does not know, becomes `mint_without_burn` after a few lookups; a burn from before the start height is ignored; a burn inside a range we scanned but did not store is `ingestion_gap`. Lookups are bounded (see Known limitations).
+A final receive with no burn is an orphan. For each one the resolver uses Iris only to find the source transaction. It then reads the source chain itself and checks that the transaction contains a burn equal to the attested message. No equal burn means value was minted without a matching on-chain burn (`iris_mismatch`); an equal burn that we already hold, final, under another nonce means the same burn was attested and minted twice (`double_mint`); a transaction the chain cannot show, or a nonce Iris does not know, becomes `mint_without_burn` after a few lookups; a burn from before the start height is ignored; a burn inside a range we scanned but did not store is `ingestion_gap`. Lookups are bounded (see Known limitations).
 
 ## Alerts
 
@@ -126,7 +126,7 @@ cargo build --release
    Open alerts  critical 0   warning 0   info 0
    ```
 
-   A transfer is `burned` (not attested yet), `attested` (attested, no receive yet), `completed`, or `pre_window`. `pre_window` is an attested burn whose receive may have happened before the destination chain's observation window began, so its absence cannot be seen (ADR 0013, see below). List them with `transfers --state pre_window`.
+   A transfer is `burned` (not attested yet), `attested` (attested, no receive yet), `completed`, or `pre_window`. `pre_window` is an attested burn whose receive may have happened before the destination chain's observation window began, so its absence cannot be seen (see below). List them with `transfers --state pre_window`.
 
    Example `transfers` output. The values come from the mainnet captures in `tests/fixtures`; the second row is shown as `attested` for illustration:
 
@@ -164,40 +164,39 @@ Two short runs on 2026-11-24, both against the public RPC endpoints and read-onl
 - 50 transfers seen; 37 matched end to end: 12 Base to Solana (9 Fast, 3 Standard) and 25 Solana to Base.
 - Latency: Fast 5 to 53 s; Base to Solana Standard about 1333 s.
 - 0 errors, 0 rollbacks, 0 alerts, and no unredacted RPC URL in the logs.
-- One transient publicnode error, `-32602 "block range extends beyond current head block"`, was retried on the next tick. This confirmed the unverified fact U9.
+- One transient publicnode error, `-32602 "block range extends beyond current head block"`, was retried on the next tick. This confirmed an unverified fact.
 - 34 Solana `getTransaction` HTTP 429 answers in the first 5 minutes of the backfill, all retried; Solana caught up in under 5 minutes.
-- The run found the pre-window gap: 11 Base to Solana Fast burns had been minted on Solana before the Solana window began, which would have raised false `unclaimed` alerts. This led to ADR 0013 and the `pre_window` state.
+- The run found the pre-window gap: 11 Base to Solana Fast burns had been minted on Solana before the Solana window began, which would have raised false `unclaimed` alerts. This led to the `pre_window` state.
 
 ### Run 2
 
 20 minutes on a fresh database, with about 1 h of Base backfill (18000 blocks) and about 1 h of Solana backfill (16700 slots). `unclaimed_after_secs` was lowered to 300 to exercise the coverage rule.
 
 - 64 transfers: 57 completed, 6 `pre_window` (Base to Solana burns minted on Solana before the Solana window began), 1 burned (waiting for attestation), and 0 `attested`.
-- No false `unclaimed` alert. This is the fix for the run 1 finding (ADR 0013).
+- No false `unclaimed` alert. This is the fix for the run 1 finding.
 - 0 errors, 0 rollbacks, 0 critical alerts, and no unredacted RPC URL in the logs.
 - Two warning alerts, `component_stalled` and `ingestion_lagging` for Solana, fired 330 s after the start and resolved by themselves about 4 minutes later. The cause was the 1-hour Solana backfill on the public RPC (50 `getTransaction` HTTP 429 retries), which took about 8 minutes. Health is recorded per tick, so one long catch-up tick looks like a stall.
-- Base: 6 transient `-32602 "block range extends beyond current head block"` answers from the load-balanced public RPC, each retried on the next tick. This confirmed U9 again.
+- Base: 6 transient `-32602 "block range extends beyond current head block"` answers from the load-balanced public RPC, each retried on the next tick. This confirmed it again.
 
 ## Known limitations
 
-- **Public RPC (risk R1).** The default config uses public, load-balanced RPC endpoints. A backend that is behind can return a short `eth_getLogs` result for a finalized range, and an event in it would then be missed. A missed burn makes its receive an orphan, which raises `ingestion_gap`. A missed receive makes its burn `unclaimed`. Set `BW_EVM_RPC_URL` to a dedicated endpoint to reduce the risk. Solana is guarded by `minContextSlot` and by fetching transactions at `finalized`.
+- **Public RPC.** The default config uses public, load-balanced RPC endpoints. A backend that is behind can return a short `eth_getLogs` result for a finalized range, and an event in it would then be missed. A missed burn makes its receive an orphan, which raises `ingestion_gap`. A missed receive makes its burn `unclaimed`. Set `BW_EVM_RPC_URL` to a dedicated endpoint to reduce the risk. Solana is guarded by `minContextSlot` and by fetching transactions at `finalized`.
 - **Backfill warnings.** During a long backfill on a rate-limited RPC, a single catch-up tick can take minutes, so `component_stalled` and `ingestion_lagging` warnings can fire until the chain catches up. They resolve automatically. Use a dedicated RPC or a shorter backfill.
-- **Re-attestation of an expired Fast message (Q1, R9, U10).** If Circle re-attests an expired Fast message under a new nonce (it is unverified whether the nonce changes), the stored burn still holds the old nonce. A mint under the new nonce would then raise a false critical `double_mint`.
-- **Pre-window burns are not claimed (risk R13).** A burn older than the destination window start (plus 60 s) that really was never claimed gets no `unclaimed` alert, because its receive could have happened before we were watching. This is bounded: mostly the roughly 18 minutes before the first start on Base to Solana. List such burns with `transfers --state pre_window` and check them by hand.
-- **Orphan receives are verified, with bounded work.** A final receive with no burn is checked against the source chain: Iris names the source transaction, and the chain itself must hold a burn equal to the attested message (ADR 0012). No equal burn is a critical `iris_mismatch`; an unknown nonce or source transaction becomes a critical `mint_without_burn` after `monitor.mint_without_burn_lookups` (default 3) lookups. A receive whose content equals a burn that is already final and attested under another nonce is a critical `double_mint`. Each orphan gets a strict maximum of `iris.orphan_max_lookups` (default 6) attempts, failed ones included, spaced `iris.orphan_retry_secs` (default 600 s), at most `iris.orphan_batch` orphans per tick. A failed attempt keeps the stored verdict; if the last attempt fails with no verdict, or the orphan stays undecidable, it ends as `orphan_unresolved` (warning), so nothing is retried forever. Only an Iris HTTP 429 is not an attempt: it pauses all Iris calls.
-- **Double mint of an old burn (ADR 0012).** A double mint of a burn below `start_height` is not detectable: we do not store such burns, so we do not know their nonces.
+- **Re-attestation of an expired Fast message.** If Circle re-attests an expired Fast message under a new nonce (it is unverified whether the nonce changes), the stored burn still holds the old nonce. A mint under the new nonce would then raise a false critical `double_mint`.
+- **Pre-window burns are not claimed.** A burn older than the destination window start (plus 60 s) that really was never claimed gets no `unclaimed` alert, because its receive could have happened before we were watching. This is bounded: mostly the roughly 18 minutes before the first start on Base to Solana. List such burns with `transfers --state pre_window` and check them by hand.
+- **Orphan receives are verified, with bounded work.** A final receive with no burn is checked against the source chain: Iris names the source transaction, and the chain itself must hold a burn equal to the attested message. No equal burn is a critical `iris_mismatch`; an unknown nonce or source transaction becomes a critical `mint_without_burn` after `monitor.mint_without_burn_lookups` (default 3) lookups. A receive whose content equals a burn that is already final and attested under another nonce is a critical `double_mint`. Each orphan gets a strict maximum of `iris.orphan_max_lookups` (default 6) attempts, failed ones included, spaced `iris.orphan_retry_secs` (default 600 s), at most `iris.orphan_batch` orphans per tick. A failed attempt keeps the stored verdict; if the last attempt fails with no verdict, or the orphan stays undecidable, it ends as `orphan_unresolved` (warning), so nothing is retried forever. Only an Iris HTTP 429 is not an attempt: it pauses all Iris calls.
+- **Double mint of an old burn.** A double mint of a burn below `start_height` is not detectable: we do not store such burns, so we do not know their nonces.
 - **Database schema version 2.** The database file has schema version 2. A file from an older build (version 1) is rejected with a clear error; delete it and start again. There is no migration. Before a mint, a burn whose Iris message differs from the burn only raises the `attestation_delayed` warning, because no value moved yet.
-- **Old source transactions (risk R11).** A public RPC with short history can fail to serve an old but real source transaction. Its receive then looks like `source_not_found` and can raise a false critical `mint_without_burn`. Use a full-history RPC for production. How far back the public endpoints serve is unverified (U14).
+- **Old source transactions.** A public RPC with short history can fail to serve an old but real source transaction. Its receive then looks like `source_not_found` and can raise a false critical `mint_without_burn`. Use a full-history RPC for production. How far back the public endpoints serve is unverified.
 - **Monitor lists are capped.** Each candidate list is limited to `monitor.snapshot_limit` rows (default 1000), newest first. When one is cut, its alert kinds are never resolved and `monitor_truncated` reports it.
 - **Trust.** RPC data is trusted. Iris, the destination receive and the re-read of the source transaction act as independent cross-checks (`field_mismatch`, `mint_without_burn`, `iris_mismatch`).
 - **Scope.** Stage 1 covers only the Base and Solana pair, CCTP V2 and the mainnet configuration (testnet addresses are not verified). There is no `rescan` repair command, no web UI, no Postgres, and no support for more than one process per database.
 - **Undecodable events stop ingestion.** A CCTP event that passes the identity filter but does not decode halts that chain's ingestion at that range, by design. The tick fails and retries with backoff, and `component_stalled` reports it.
-- Some protocol facts the design relies on (for example how a lagging Solana node answers `minContextSlot`) are listed as unverified in section 18.2 of the architecture document until a live run confirms them.
+- Some protocol facts the design relies on (for example how a lagging Solana node answers `minContextSlot`) are unverified until a live run confirms them.
 
 ## Documentation
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): the design, invariants, test plan and unverified facts.
-- Decision records: [0001 reorgs: re-derive the tail](docs/adr/0001-reorg-rederive-unfinalized-tail.md), [0002 Solana slot cursor](docs/adr/0002-solana-slot-cursor.md), [0003 SQLite](docs/adr/0003-sqlite-storage.md), [0004 SQLite from async code](docs/adr/0004-sqlite-access-from-async.md), [0005 Solana raw JSON-RPC](docs/adr/0005-solana-raw-json-rpc.md), [0006 EVM burn record](docs/adr/0006-evm-burn-record-message-sent.md), [0007 Iris mapping by fields](docs/adr/0007-iris-mapping-by-message-fields.md), [0008 matching as a SQL view](docs/adr/0008-matching-as-sql-view.md), [0009 alerts outbox](docs/adr/0009-alerts-outbox-dedup.md), [0010 error policy](docs/adr/0010-error-policy-crash-only.md), [0011 single crate](docs/adr/0011-single-crate.md), [0012 orphan receive verification](docs/adr/0012-orphan-receive-verification.md), [0013 destination coverage window](docs/adr/0013-destination-coverage-window.md).
+The API documentation is generated by rustdoc: run `cargo doc --no-deps --open`.
 
 ## License
 

@@ -1,12 +1,12 @@
 //! SQL for the monitor and the notifier outbox: the monitor snapshot, alert
-//! synchronisation (design section 9.3) and the delivery columns.
+//! synchronisation and the delivery columns.
 //!
-//! Column ownership (section 5.2): the monitor side writes `kind` ..
+//! Column ownership: the monitor side writes `kind` ..
 //! `resolved_at` of `alerts` (through [`Store::sync_alerts`]); the notifier
 //! side writes `notified_at`, `notify_attempts` and `last_notify_error`.
 //!
 //! The snapshot is read in one transaction as a set of candidate lists
-//! (design section 9.1). Each list holds alert-capable rows only (SQL applies
+//! Each list holds alert-capable rows only (SQL applies
 //! the condition), newest first, capped at `SnapshotLimits::per_list`; a list
 //! that has more rows than the cap is flagged `truncated`. The pure
 //! `monitor::evaluate` applies the exact rules again and decides which alert
@@ -107,7 +107,7 @@ pub struct ChainSnapshot {
     pub observed_head: Option<u64>,
     /// When a tail scan last reached its target.
     pub caught_up_at: Option<i64>,
-    /// Chain time at which the observed window starts (ADR 0013).
+    /// Chain time at which the observed window starts.
     pub start_time: i64,
 }
 
@@ -176,7 +176,7 @@ pub struct MismatchRow {
     pub source_domain: Domain,
     /// Nonce.
     pub nonce: Bytes32,
-    /// Names of the fields that differ (design section 8).
+    /// Names of the fields that differ.
     pub fields: Vec<String>,
 }
 
@@ -242,7 +242,7 @@ pub struct MonitorSnapshot {
     pub delayed_burns: Candidates<PendingBurnRow>,
     /// `unclaimed_burns`: attested burns without a receive, past
     /// `unclaimed_after` of the destination `caught_up_at`, and inside the
-    /// destination coverage window (ADR 0013).
+    /// destination coverage window.
     pub unclaimed_burns: Candidates<AttestedBurnRow>,
     /// `orphan_receives`: final receives without a burn and with an
     /// alert-capable verdict.
@@ -441,7 +441,7 @@ fn candidates<T>(
 
 impl Store {
     /// Reads everything `evaluate` needs, in one read transaction: chain and
-    /// health rows, the candidate lists of design section 9.1 (alert-capable
+    /// health rows, the candidate lists (alert-capable
     /// rows, newest first, `per_list + 1` fetched to set `truncated`), and the
     /// latency baseline.
     ///
@@ -671,8 +671,7 @@ impl Store {
         })
     }
 
-    /// Makes the `alerts` table match `active`, in one transaction
-    /// (design section 9.3).
+    /// Makes the `alerts` table match `active`, in one transaction.
     ///
     /// - No row for a condition: insert it (`first_seen_at = opened_at =
     ///   last_seen_at = now`).

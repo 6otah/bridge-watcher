@@ -590,7 +590,7 @@ impl Store {
     /// of all other components. `last_ok_at`, `last_error` and `last_error_at`
     /// of surviving rows are kept for diagnosis. Called once per process by
     /// `app`, after slow start-up work and before the loops spawn, so every
-    /// loop gets a full `stall_after` grace period (section 9.2).
+    /// loop gets a full `stall_after` grace period.
     ///
     /// # Errors
     /// [`StoreError::Sqlite`]. Nothing is written on error.

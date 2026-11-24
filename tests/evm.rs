@@ -1,4 +1,4 @@
-//! EVM source tests (`docs/ARCHITECTURE.md` section 15.1): `event_from_log` on
+//! EVM source tests: `event_from_log` on
 //! the real Base logs, and `EvmSource::scan` over a fake node.
 
 mod common;

@@ -1,7 +1,7 @@
 //! SQL for the attestation resolver: the polling queue, the write-once nonce
 //! rule, and the orphan-receive lookup queue.
 //!
-//! Column ownership (design section 5.2): this file writes only the
+//! Column ownership: this file writes only the
 //! attestation columns of `burns` (`nonce` .. `poll_count`) and the lookup
 //! columns of `receives` (`source_lookup` .. `iris_source_tx`). Every update
 //! is a targeted `UPDATE ... WHERE id = ?`. `AUTOINCREMENT` ids are never
@@ -100,7 +100,7 @@ pub struct StoredBurn {
     pub finalized: bool,
 }
 
-/// Verdict of one orphan lookup (design section 7.2). The column
+/// Verdict of one orphan lookup. The column
 /// `receives.source_lookup` stores it in snake_case.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SourceLookup {
@@ -279,7 +279,7 @@ impl Store {
     }
 
     /// Applies Iris poll results in one transaction under the nonce
-    /// write-once rule (design section 7.1).
+    /// write-once rule.
     ///
     /// Per update: the poll bookkeeping (`last_polled_at`, `poll_count`,
     /// `next_poll_at`, `unseen` becomes `pending`) is always written. With an
@@ -386,7 +386,7 @@ impl Store {
     }
 
     /// Final receives with no burn of the same `(source_domain, nonce)` that
-    /// are due for a source lookup (design section 7.2).
+    /// are due for a source lookup.
     ///
     /// Due means: older than `grace_secs` (chain time against `now`), no final
     /// verdict yet (`source_lookup` is NULL or `unknown_to_iris`),
@@ -441,7 +441,7 @@ impl Store {
 
     /// All stored burns of one source transaction, by `event_index`, with
     /// their stored nonces and finality. Orphan verification compares them with the Iris
-    /// message (design section 7.2).
+    /// message.
     ///
     /// # Errors
     /// [`StoreError::Sqlite`].

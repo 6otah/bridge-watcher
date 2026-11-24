@@ -1,7 +1,7 @@
 //! bridge-watcher: a read-only watcher for Circle CCTP V2 USDC transfers
 //! between Solana (domain 5) and Base (domain 6).
 //!
-//! The design is in `docs/ARCHITECTURE.md`. Modules are layered: `domain`,
+//! Modules are layered: `domain`,
 //! `codec`, `matching`, `ratelimit` and `config` are pure; `source`, `evm`,
 //! `solana` and `iris` talk to the network; `store` owns all SQL; `ingest`,
 //! `resolver`, `monitor` and `notify` are the background tasks that `app`

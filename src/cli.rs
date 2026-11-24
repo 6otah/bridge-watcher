@@ -1,4 +1,4 @@
-//! Read-only output for the status and transfers commands (phase P8).
+//! Read-only output for the status and transfers commands.
 //!
 //! Both functions are pure over the report types of `store::read` and write
 //! plain text, so the output is stable and testable. Times are UTC. Nothing

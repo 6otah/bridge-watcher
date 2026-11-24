@@ -1,6 +1,6 @@
-//! Process wiring: builds clients, initialises cursors, spawns the background tasks and handles shutdown (phase P8).
+//! Process wiring: builds clients, initialises cursors, spawns the background tasks and handles shutdown.
 //!
-//! [`run`] follows the startup order of `docs/ARCHITECTURE.md` section 13:
+//! [`run`] follows the startup order:
 //! resolve the RPC URLs, open the store, build the clients, write the first-run
 //! cursors, start the health run, spawn the five tasks. The first task that
 //! returns a store error (or panics) cancels all the others and becomes the
@@ -27,7 +27,7 @@ use crate::solana::SolanaSource;
 use crate::source::Chains;
 use crate::store::{ChainLimits, SharedStore, StoreError};
 
-/// Cap of the ingestors' backoff after failed ticks (section 6.6).
+/// Cap of the ingestors' backoff after failed ticks.
 const MAX_BACKOFF: Duration = Duration::from_secs(300);
 /// Time the tasks get to stop after the shutdown signal.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(15);
@@ -156,7 +156,7 @@ async fn init_cursor_retrying<S: crate::source::ChainSource>(
 
 /// Runs the watcher until `shutdown` is cancelled or a task fails.
 ///
-/// Startup (section 13): resolve the RPC URLs (an environment override must be
+/// Startup: resolve the RPC URLs (an environment override must be
 /// a valid http(s) URL); create the database's parent directory and open the
 /// store; build the clients; `init_cursor` for both chains (first run only);
 /// `Store::start_components` with [`health_components`]; spawn two ingestors,

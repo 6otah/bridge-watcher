@@ -2,8 +2,7 @@
 //!
 //! A scan fetches one transaction per listed signature, which is expensive, so
 //! it works on a budget. The budget is soft: a batch always ends at a slot
-//! boundary, because the cursor is a slot and a commit must never split one
-//! (ADR 0002).
+//! boundary, because the cursor is a slot and a commit must never split one.
 
 /// One entry of a signature listing.
 #[derive(Clone, Debug, PartialEq, Eq)]

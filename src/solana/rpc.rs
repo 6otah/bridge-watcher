@@ -1,4 +1,4 @@
-//! Solana JSON-RPC client and serde types (phase P5, ADR 0005).
+//! Solana JSON-RPC client and serde types.
 //!
 //! The client calls four methods: `getSlot`, `getSignaturesForAddress`,
 //! `getTransaction` and `getBlockTime`. Response types hold only the fields the
@@ -170,7 +170,7 @@ pub fn get_signatures_params(
 
 /// Params of `getTransaction`: `json` encoding and
 /// `maxSupportedTransactionVersion: 1`, without which a version 1
-/// transaction is an error (ADR 0005).
+/// transaction is an error.
 pub fn get_transaction_params(signature: &str, commitment: Commitment) -> Value {
     json!([signature, {
         "encoding": "json",

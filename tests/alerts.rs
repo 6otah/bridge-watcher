@@ -1,4 +1,4 @@
-//! Alert lifecycle, outbox and notifier (design sections 9.3, 9.4 and 15.5).
+//! Alert lifecycle, outbox and notifier.
 //! The sink is `FakeSink`; the Telegram sink is tested through request
 //! building and reply parsing only.
 
