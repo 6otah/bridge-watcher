@@ -27,13 +27,29 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, OpenFlags};
 
+pub use alerts::{
+    Alert, AlertCondition, AlertSyncStats, AttestedBurnRow, Candidates, ChainLimits, ChainSnapshot,
+    DuplicateRow, LatencySample, MismatchRow, MonitorSnapshot, OrphanRow, PendingBurnRow,
+    RECENT_SECS, RollbackRow, SnapshotLimits,
+};
+pub use attest::{
+    BurnPollUpdate, IrisObservation, NonceConflict, OrphanReceive, PendingBurn, PendingTx,
+    SourceLookup, StoredBurn,
+};
 pub use ingest::{ApplyStats, ChainCursor, Scope};
 pub use read::{
     AlertCounts, ChainStatus, HealthRow, StatusReport, TransferFilter, TransferRow, TransferState,
 };
 
 const SCHEMA: &str = include_str!("schema.sql");
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
+
+/// Slack, in seconds, for clock differences between chains in the coverage
+/// rule (ADR 0013): a missing receive is claimed only for a burn with
+/// `block_time >= destination start_time + COVERAGE_MARGIN_SECS`. The
+/// `transfers` view in `schema.sql` holds the same number as a literal; a test
+/// keeps them equal.
+pub const COVERAGE_MARGIN_SECS: i64 = 60;
 
 /// Database failure. Every variant is fatal for the process: a restart
 /// replays safely (ADR 0010).
@@ -61,8 +77,11 @@ pub enum StoreError {
     /// A caller broke a documented precondition (a programming error).
     #[error("scope violation: {0}")]
     Scope(String),
-    /// The file has a schema version this build does not know.
-    #[error("database schema version {0} is not supported")]
+    /// The file has a schema version this build does not know. There is no
+    /// migration: delete the database file and start again.
+    #[error(
+        "database schema version {0} is not supported (this build needs version 2); delete the database file, there is no migration from version {0}"
+    )]
     SchemaVersion(i64),
     /// The database and the configuration disagree.
     #[error("config does not match database: {0}")]
@@ -265,13 +284,20 @@ mod tests {
         }
     }
 
+    fn assert_i3(res: rusqlite::Result<usize>) {
+        let err = res
+            .expect_err("the final-row trigger must abort")
+            .to_string();
+        assert!(err.contains("invariant I3"), "unexpected error: {err}");
+    }
+
     /// REPLACE conflict resolution deletes rows without the DELETE trigger
     /// unless `recursive_triggers` is on. This runs on the connection that
     /// `Store` itself configures, because the pragma is per connection.
     #[test]
     fn store_replace_cannot_bypass_final_triggers() {
         let mut store = Store::open_in_memory().unwrap();
-        store.init_cursor(BASE, "base", 100, 0).unwrap();
+        store.init_cursor(BASE, "base", 100, 0, 0).unwrap();
         store
             .apply_scan(
                 BASE,
@@ -303,7 +329,7 @@ mod tests {
             SELECT source_domain, tx_id, event_index, 999, block_time, 0, destination_domain, sender,
                 recipient, destination_caller, min_finality_threshold, burn_token, mint_recipient,
                 amount, depositor, max_fee, hook_data FROM burns WHERE tx_id = '0xa'";
-        assert!(conn.execute(replace_burn, []).is_err());
+        assert_i3(conn.execute(replace_burn, []));
         let replace_receive = "INSERT OR REPLACE INTO receives (domain, tx_id, event_index, height,
                 block_time, finalized, source_domain, nonce, sender, caller,
                 finality_threshold_executed, burn_token, mint_recipient, amount, depositor, max_fee,
@@ -311,7 +337,7 @@ mod tests {
             SELECT domain, tx_id, event_index, 999, block_time, 0, source_domain, nonce, sender, caller,
                 finality_threshold_executed, burn_token, mint_recipient, amount, depositor, max_fee,
                 fee_executed, expiration_block, hook_data FROM receives WHERE tx_id = '0xr'";
-        assert!(conn.execute(replace_receive, []).is_err());
+        assert_i3(conn.execute(replace_receive, []));
 
         // UPDATE ... OR REPLACE onto the unique nonce index of a final row.
         conn.execute(
@@ -328,7 +354,7 @@ mod tests {
             "UPDATE OR REPLACE burns SET nonce = ?1 WHERE tx_id = '0xb'",
             params![vec![1u8; 32]],
         );
-        assert!(res.is_err());
+        assert_i3(res);
 
         let (height, finalized): (i64, i64) = conn
             .query_row(

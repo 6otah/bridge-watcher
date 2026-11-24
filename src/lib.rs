@@ -11,6 +11,7 @@
 
 pub mod app;
 pub mod cli;
+pub mod clock;
 pub mod codec;
 pub mod config;
 pub mod domain;

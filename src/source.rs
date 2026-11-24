@@ -1,4 +1,4 @@
-//! Chain access contract: [`ChainSource`], [`TxLocator`], [`ScanResult`],
+//! Chain access contract: [`ChainSource`], [`TxInspector`], [`ScanResult`],
 //! [`SourceError`] and the [`Chains`] router.
 //!
 //! Scan contract (`docs/ARCHITECTURE.md` section 6.3). For
@@ -18,9 +18,10 @@
 
 use std::sync::Arc;
 
-use crate::domain::{ChainEvent, Commitment, Domain, Heights};
+use crate::domain::{BurnMessage, ChainEvent, Commitment, Domain, Heights};
 
 /// Result of one [`ChainSource::scan`].
+#[derive(Debug)]
 pub struct ScanResult {
     /// Relevant events found.
     pub events: Vec<ChainEvent>,
@@ -75,33 +76,61 @@ pub trait ChainSource: Send + Sync + 'static {
         up_to: u64,
         commitment: Commitment,
     ) -> impl Future<Output = Result<ScanResult, SourceError>> + Send;
-    /// Height of a transaction on this chain, or `None` if the chain does not
-    /// know it.
+    /// What this chain says about one transaction (orphan verification,
+    /// design section 7.2). `Ok(None)`: the chain does not know the tx
+    /// (Solana: it is not finalized either, or the id is not a signature).
     ///
     /// # Errors
-    /// [`SourceError::Rpc`] if the node cannot answer.
-    fn locate_tx(
+    /// [`SourceError::Rpc`] if the node cannot answer;
+    /// [`SourceError::Undecodable`] if a CCTP log of the tx does not decode.
+    fn inspect_tx(
         &self,
         tx_id: &str,
-    ) -> impl Future<Output = Result<Option<u64>, SourceError>> + Send;
-}
-
-/// Finds a transaction on whichever chain owns the domain. Used by the
-/// resolver to classify orphan receives.
-pub trait TxLocator: Send + Sync + 'static {
-    /// Height of `tx_id` on the chain of `domain`; `None` if unknown or if no
-    /// chain has that domain.
+    ) -> impl Future<Output = Result<Option<TxEvidence>, SourceError>> + Send;
+    /// Chain time of the last existing block at or below `height`: returns
+    /// `(block height, unix seconds)`. Used once, by `init_cursor`, to record
+    /// `chain_state.start_time` (coverage rule, ADR 0013).
+    ///
+    /// EVM: the header timestamp of `height`. Solana: `getBlockTime(slot)`;
+    /// on a skipped slot or a null answer it steps down one slot, at most 1000
+    /// steps.
     ///
     /// # Errors
-    /// [`SourceError::Rpc`] if the node cannot answer.
-    fn locate_tx(
+    /// [`SourceError::Rpc`] if the node cannot answer;
+    /// [`SourceError::Lagging`] if no block time was found in range.
+    fn time_at_or_before(
+        &self,
+        height: u64,
+    ) -> impl Future<Output = Result<(u64, i64), SourceError>> + Send;
+}
+
+/// The source chain's view of one transaction.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TxEvidence {
+    /// Block number or slot of the transaction.
+    pub height: u64,
+    /// Burns of this tx to the counterparty domain, decoded with the same
+    /// rules as ingestion (S4). Empty for a failed tx or a tx without such
+    /// burns.
+    pub burns: Vec<BurnMessage>,
+}
+
+/// Inspects a transaction on whichever chain owns the domain. Used by the
+/// resolver to verify orphan receives against the source chain.
+pub trait TxInspector: Send + Sync + 'static {
+    /// Evidence for `tx_id` on the chain of `domain`; `None` if the chain does
+    /// not know it or if no chain has that domain.
+    ///
+    /// # Errors
+    /// [`SourceError`] as for [`ChainSource::inspect_tx`].
+    fn inspect_tx(
         &self,
         domain: Domain,
         tx_id: &str,
-    ) -> impl Future<Output = Result<Option<u64>, SourceError>> + Send;
+    ) -> impl Future<Output = Result<Option<TxEvidence>, SourceError>> + Send;
 }
 
-/// Routes `locate_tx` by domain to one of two sources. An unknown domain gives
+/// Routes `inspect_tx` by domain to one of two sources. An unknown domain gives
 /// `Ok(None)`.
 pub struct Chains<A, B> {
     /// First chain.
@@ -110,12 +139,16 @@ pub struct Chains<A, B> {
     pub b: Arc<B>,
 }
 
-impl<A: ChainSource, B: ChainSource> TxLocator for Chains<A, B> {
-    async fn locate_tx(&self, domain: Domain, tx_id: &str) -> Result<Option<u64>, SourceError> {
+impl<A: ChainSource, B: ChainSource> TxInspector for Chains<A, B> {
+    async fn inspect_tx(
+        &self,
+        domain: Domain,
+        tx_id: &str,
+    ) -> Result<Option<TxEvidence>, SourceError> {
         if domain == self.a.domain() {
-            self.a.locate_tx(tx_id).await
+            self.a.inspect_tx(tx_id).await
         } else if domain == self.b.domain() {
-            self.b.locate_tx(tx_id).await
+            self.b.inspect_tx(tx_id).await
         } else {
             Ok(None)
         }

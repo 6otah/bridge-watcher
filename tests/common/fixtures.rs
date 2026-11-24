@@ -60,48 +60,22 @@ pub fn iris_message(name: &str) -> Vec<u8> {
     hex::decode(hex_str.trim_start_matches("0x")).expect("hex")
 }
 
-/// One flattened inner instruction of a Solana transaction.
+/// One flattened inner instruction of a Solana transaction. Program ids are
+/// not resolved here: that is the trust rule of `events_from_transaction`, and
+/// a second copy in test code could drift from it.
 pub struct InnerIx {
     /// Position in the flattened inner-instruction list.
     pub index: u32,
-    /// Index into the account keys (static + loaded writable + loaded readonly).
-    pub program_index: usize,
-    pub program_id: String,
     pub data: Vec<u8>,
 }
 
-/// Account keys as the runtime resolves them for a v0 or v1 transaction.
-pub fn account_keys(tx: &Value) -> Vec<String> {
-    let strings = |v: &Value| -> Vec<String> {
-        v.as_array()
-            .map(|a| a.iter().map(|k| k.as_str().unwrap().to_string()).collect())
-            .unwrap_or_default()
-    };
-    let mut keys = strings(&tx["transaction"]["message"]["accountKeys"]);
-    let loaded = &tx["meta"]["loadedAddresses"];
-    keys.extend(strings(&loaded["writable"]));
-    keys.extend(strings(&loaded["readonly"]));
-    keys
-}
-
-pub fn static_key_count(tx: &Value) -> usize {
-    tx["transaction"]["message"]["accountKeys"]
-        .as_array()
-        .unwrap()
-        .len()
-}
-
 pub fn inner_instructions(tx: &Value) -> Vec<InnerIx> {
-    let keys = account_keys(tx);
     let mut out = Vec::new();
     let mut index = 0u32;
     for group in tx["meta"]["innerInstructions"].as_array().unwrap() {
         for ix in group["instructions"].as_array().unwrap() {
-            let program_index = ix["programIdIndex"].as_u64().unwrap() as usize;
             out.push(InnerIx {
                 index,
-                program_index,
-                program_id: keys[program_index].clone(),
                 data: bs58::decode(ix["data"].as_str().unwrap())
                     .into_vec()
                     .unwrap(),

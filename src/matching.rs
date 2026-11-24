@@ -57,6 +57,10 @@ pub struct IrisCandidate {
 /// to its message if the fields are equal; give the remaining messages
 /// greedily, in `event_index` order, to burns without a nonce. Greedy is
 /// correct because equal burns are interchangeable for the first assignment.
+///
+/// A malformed Iris response can hold two messages with one nonce. Every nonce
+/// that gets paired is marked used, so the second message is never handed to
+/// another burn and the store never sees the same nonce twice.
 pub fn assign_iris_messages(
     burns: &[BurnSlot],
     iris: &[Option<IrisCandidate>],
@@ -64,6 +68,7 @@ pub fn assign_iris_messages(
     let held = |c: &IrisCandidate| burns.iter().any(|b| b.nonce == Some(c.nonce));
     let reserved: Vec<bool> = iris.iter().map(|m| m.as_ref().is_some_and(held)).collect();
     let mut used = vec![false; iris.len()];
+    let mut used_nonces: Vec<Bytes32> = Vec::new();
     let mut paired = vec![false; burns.len()];
     let mut pairs = Vec::new();
 
@@ -77,6 +82,7 @@ pub fn assign_iris_messages(
         });
         if let Some((j, _)) = hit {
             used[j] = true;
+            used_nonces.push(nonce);
             pairs.push((burn.id, j));
         }
     }
@@ -85,10 +91,16 @@ pub fn assign_iris_messages(
             continue;
         }
         let hit = iris.iter().enumerate().find(|(j, m)| {
-            !reserved[*j] && !used[*j] && m.as_ref().is_some_and(|m| m.message == burn.message)
+            !reserved[*j]
+                && !used[*j]
+                && m.as_ref()
+                    .is_some_and(|m| m.message == burn.message && !used_nonces.contains(&m.nonce))
         });
-        if let Some((j, _)) = hit {
+        if let Some((j, m)) = hit {
             used[j] = true;
+            if let Some(m) = m {
+                used_nonces.push(m.nonce);
+            }
             pairs.push((burn.id, j));
         }
     }

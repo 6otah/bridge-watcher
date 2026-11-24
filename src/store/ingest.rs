@@ -74,6 +74,9 @@ pub struct ChainCursor {
     pub name: String,
     /// First height in scope; never changes.
     pub start_height: u64,
+    /// Chain time at which the window starts: the time of the last block at or
+    /// below `start_height - 1`. Written once with the cursor; never changes.
+    pub start_time: i64,
     /// All events at heights up to this one are stored as final.
     pub final_height: u64,
     /// Top of the last complete tail scan.
@@ -339,7 +342,7 @@ impl Store {
         let row = self
             .conn
             .query_row(
-                "SELECT name, start_height, final_height, scanned_head FROM chain_state WHERE domain = ?1",
+                "SELECT name, start_height, final_height, scanned_head, start_time FROM chain_state WHERE domain = ?1",
                 params![domain.0],
                 |r| {
                     Ok(ChainCursor {
@@ -348,6 +351,7 @@ impl Store {
                         start_height: r.get::<_, i64>(1)? as u64,
                         final_height: r.get::<_, i64>(2)? as u64,
                         scanned_head: r.get::<_, Option<i64>>(3)?.map(|v| v as u64),
+                        start_time: r.get(4)?,
                     })
                 },
             )
@@ -355,9 +359,11 @@ impl Store {
         Ok(row)
     }
 
-    /// Creates the cursor on the first run: `final_height` as given and
-    /// `start_height = final_height + 1`. If the row exists, returns it
-    /// unchanged.
+    /// Creates the cursor on the first run: `final_height` as given,
+    /// `start_height = final_height + 1`, and `start_time` (the chain time of
+    /// the last block at or below `final_height`). All of them are written in
+    /// one statement and never change. If the row exists, returns it
+    /// unchanged and ignores the arguments.
     ///
     /// # Errors
     /// [`StoreError::ConfigMismatch`] if the stored row has another `name`;
@@ -367,15 +373,17 @@ impl Store {
         domain: Domain,
         name: &str,
         final_height: u64,
+        start_time: i64,
         now: i64,
     ) -> Result<ChainCursor, StoreError> {
         let start = to_i64(final_height, "final_height")?
             .checked_add(1)
             .ok_or_else(|| StoreError::Scope("final_height overflow".into()))?;
         self.conn.execute(
-            "INSERT OR IGNORE INTO chain_state (domain, name, start_height, final_height, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![domain.0, name, start, start - 1, now],
+            "INSERT OR IGNORE INTO chain_state
+                (domain, name, start_height, start_time, final_height, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![domain.0, name, start, start_time, start - 1, now],
         )?;
         let cursor = self
             .cursor(domain)?
@@ -572,6 +580,44 @@ impl Store {
         if changed == 0 {
             return Err(StoreError::NoCursor { domain: domain.0 });
         }
+        Ok(())
+    }
+
+    /// Starts a process run: `health` then describes exactly `components`.
+    ///
+    /// In one transaction, upserts the row of each listed component with
+    /// `started_at = now` and `consecutive_failures = 0`, and deletes the rows
+    /// of all other components. `last_ok_at`, `last_error` and `last_error_at`
+    /// of surviving rows are kept for diagnosis. Called once per process by
+    /// `app`, after slow start-up work and before the loops spawn, so every
+    /// loop gets a full `stall_after` grace period (section 9.2).
+    ///
+    /// # Errors
+    /// [`StoreError::Sqlite`]. Nothing is written on error.
+    pub fn start_components(&mut self, components: &[&str], now: i64) -> Result<(), StoreError> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        for component in components {
+            tx.execute(
+                "INSERT INTO health (component, started_at, consecutive_failures)
+                 VALUES (?1, ?2, 0)
+                 ON CONFLICT (component) DO UPDATE SET
+                    started_at = excluded.started_at, consecutive_failures = 0",
+                params![component, now],
+            )?;
+        }
+        let stored: Vec<String> = tx
+            .prepare("SELECT component FROM health")?
+            .query_map([], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        for component in stored.iter().filter(|c| !components.contains(&c.as_str())) {
+            tx.execute(
+                "DELETE FROM health WHERE component = ?1",
+                params![component],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 

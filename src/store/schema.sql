@@ -3,6 +3,7 @@ CREATE TABLE chain_state (
     domain              INTEGER PRIMARY KEY,          -- CCTP domain id
     name                TEXT    NOT NULL,             -- config name, e.g. 'base'
     start_height        INTEGER NOT NULL,             -- first height in scope; never changes
+    start_time          INTEGER NOT NULL,             -- chain time of the last block <= start_height - 1; never changes (ADR 0013)
     final_height        INTEGER NOT NULL,             -- the cursor (I1, I2)
     observed_finalized  INTEGER,                      -- last finalized height read from RPC
     observed_head       INTEGER,                      -- last head height read from RPC
@@ -87,7 +88,8 @@ CREATE TABLE receives (
     expiration_block        INTEGER NOT NULL,
     hook_data               BLOB    NOT NULL,
     -- orphan source lookup (owner: resolver)
-    source_lookup           TEXT CHECK (source_lookup IN ('unknown_to_iris', 'pre_start', 'missed')),
+    source_lookup           TEXT CHECK (source_lookup IN ('unknown_to_iris', 'source_not_found', 'postponed',
+                                                          'pre_start', 'missed', 'iris_mismatch', 'double_mint', 'unresolved')),
     source_lookup_count     INTEGER NOT NULL DEFAULT 0,
     next_lookup_at          INTEGER NOT NULL DEFAULT 0,
     iris_source_tx          TEXT,
@@ -155,8 +157,11 @@ SELECT
     b.amount, b.max_fee, r.fee_executed, b.min_finality_threshold,
     b.attestation_status, b.attested_at, b.delay_reason,
     CASE WHEN r.id IS NOT NULL THEN 'completed'
+         -- 60 = COVERAGE_MARGIN_SECS (store/mod.rs); a test asserts they match
+         WHEN b.attestation_status = 'complete' AND b.block_time < d.start_time + 60 THEN 'pre_window'
          WHEN b.attestation_status = 'complete' THEN 'attested'
          ELSE 'burned' END AS state,
     r.block_time - b.block_time AS latency_secs
 FROM burns b
-LEFT JOIN receives r ON r.source_domain = b.source_domain AND r.nonce = b.nonce;
+LEFT JOIN receives r ON r.source_domain = b.source_domain AND r.nonce = b.nonce
+LEFT JOIN chain_state d ON d.domain = b.destination_domain;

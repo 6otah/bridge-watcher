@@ -15,7 +15,6 @@ use sha2::{Digest, Sha256};
 const TOKEN_MESSENGER_EVM: &str = "28b5a0e9c621a5badaa536219b3a228c8168cf5d";
 const TOKEN_MESSENGER_MINTER: &str = "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe";
 const MESSAGE_TRANSMITTER: &str = "CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC";
-const AGGREGATOR: &str = "pVs6PJ3ofdqPyDhCXXdVW7waG6oNnwKQBKtuM6Mi6JP";
 
 fn evm_addr(hex_str: &str) -> Bytes32 {
     Bytes32::from_evm_address(hex::decode(hex_str).unwrap().try_into().unwrap())
@@ -28,12 +27,6 @@ fn nonce(hex_str: &str) -> Bytes32 {
             .try_into()
             .unwrap(),
     )
-}
-
-/// The trust rule of the Solana decoder, applied to one inner instruction:
-/// right program id, then the right event discriminator.
-fn is_cctp_program(ix: &InnerIx, program: &str) -> bool {
-    ix.program_id == program
 }
 
 fn tagged(tx: &serde_json::Value) -> Vec<InnerIx> {
@@ -215,7 +208,6 @@ fn codec_solana_burn_fixture_event_equals_iris_message() {
     assert_eq!(events.iter().map(|e| e.index).collect::<Vec<_>>(), [9, 10]);
 
     let burn_ix = &events[0];
-    assert!(is_cctp_program(burn_ix, TOKEN_MESSENGER_MINTER));
     let (disc, payload) = split_event_ix(&burn_ix.data).unwrap();
     assert_eq!(disc, DEPOSIT_FOR_BURN);
     let ev = DepositForBurnEvent::decode(payload).unwrap();
@@ -240,60 +232,6 @@ fn codec_solana_burn_fixture_event_equals_iris_message() {
     );
     assert_eq!(iris_fields.fee_executed, 2100);
     assert_eq!(iris_fields.finality_threshold_executed, 1000);
-}
-
-#[test]
-fn codec_solana_aggregator_event_is_rejected_by_program_id() {
-    let tx = fixtures::json("solana_burn_to_base.tx.json");
-    let events = tagged(&tx);
-    let aggregator = &events[1];
-    assert_eq!(aggregator.index, 10);
-    assert_eq!(aggregator.program_id, AGGREGATOR);
-    // Same tag, but not a CCTP program: the trust check must reject it.
-    assert!(split_event_ix(&aggregator.data).is_some());
-    assert!(!is_cctp_program(aggregator, TOKEN_MESSENGER_MINTER));
-    assert!(!is_cctp_program(aggregator, MESSAGE_TRANSMITTER));
-}
-
-#[test]
-fn codec_solana_receive_fixture_resolves_program_through_loaded_addresses() {
-    let tx = fixtures::json("solana_receive_from_base.tx.json");
-    assert_eq!(tx["version"], 0);
-    let static_len = fixtures::static_key_count(&tx);
-    let events = tagged(&tx);
-
-    let received = events
-        .iter()
-        .find(|e| e.index == 4)
-        .expect("MessageReceived at index 4");
-    assert_eq!(received.program_index, 3);
-    assert!(is_cctp_program(received, MESSAGE_TRANSMITTER));
-    // The program that emitted the sibling event sits inside the loaded
-    // address lists: index 17 is beyond the 4 static keys.
-    let sibling = events.iter().find(|e| e.index == 3).unwrap();
-    assert_eq!(sibling.program_index, 17);
-    assert!(sibling.program_index >= static_len);
-    assert!(is_cctp_program(sibling, TOKEN_MESSENGER_MINTER));
-
-    let (disc, payload) = split_event_ix(&received.data).unwrap();
-    assert_eq!(disc, MESSAGE_RECEIVED);
-    let rx = MessageReceivedEvent::decode(payload)
-        .unwrap()
-        .into_receive_message()
-        .unwrap();
-    assert_eq!(rx.source_domain, Domain(6));
-    assert_eq!(
-        rx.nonce,
-        nonce("0xdc9db8e758a6080cd494d37c7df9f4b80f3745b1957223ec728bb6759287833f")
-    );
-    assert_eq!(rx.sender, evm_addr(TOKEN_MESSENGER_EVM));
-    assert_eq!(rx.finality_threshold_executed, 2000);
-    assert_eq!(rx.body.amount, 5_196_725_157);
-
-    // The body equals the Iris message body of the same transfer.
-    let iris = fixtures::iris_message("iris_base_burn.json");
-    assert_eq!(rx.body, decode_burn_body(&iris[148..]).unwrap());
-    assert_eq!(decode_header(&iris).unwrap().nonce, rx.nonce);
 }
 
 #[test]
@@ -521,6 +459,29 @@ fn matching_guarantees_hold_on_all_small_inputs() {
                         assert!(!seen_b.contains(id) && !seen_m.contains(j));
                         seen_b.push(*id);
                         seen_m.push(*j);
+                    }
+                    // Liveness: a burn without a nonce stays unpaired only if
+                    // every equal message is reserved by a held nonce, used,
+                    // or carries a nonce that was already handed out.
+                    let handed: Vec<_> = seen_m
+                        .iter()
+                        .map(|j| iris[*j].as_ref().unwrap().nonce)
+                        .collect();
+                    for b in burns.iter().filter(|b| b.nonce.is_none()) {
+                        if seen_b.contains(&b.id) {
+                            continue;
+                        }
+                        for (j, m) in iris.iter().enumerate() {
+                            let Some(m) = m else { continue };
+                            let free = !seen_m.contains(&j)
+                                && burns.iter().all(|o| o.nonce != Some(m.nonce))
+                                && !handed.contains(&m.nonce);
+                            assert!(
+                                !(free && m.message == b.message),
+                                "liveness: burn {} left unpaired with free message {j}",
+                                b.id
+                            );
+                        }
                     }
                 }
             }

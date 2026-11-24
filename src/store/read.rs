@@ -13,18 +13,24 @@ use crate::matching::mode;
 pub enum TransferState {
     /// Burn seen, attestation not complete.
     Burned,
-    /// Attestation complete, no receive yet.
+    /// Attestation complete, no receive yet, and the destination window covers
+    /// the time the receive would have happened.
     Attested,
+    /// Attestation complete, no receive in the database, but the receive could
+    /// have happened before the destination window began (ADR 0013): its
+    /// absence is not observable.
+    PreWindow,
     /// Receive seen.
     Completed,
 }
 
 impl TransferState {
-    /// Value used by the view (`burned`, `attested`, `completed`).
+    /// Value used by the view (`burned`, `attested`, `pre_window`, `completed`).
     pub fn as_str(self) -> &'static str {
         match self {
             TransferState::Burned => "burned",
             TransferState::Attested => "attested",
+            TransferState::PreWindow => "pre_window",
             TransferState::Completed => "completed",
         }
     }
@@ -33,6 +39,7 @@ impl TransferState {
         match s {
             "burned" => Some(TransferState::Burned),
             "attested" => Some(TransferState::Attested),
+            "pre_window" => Some(TransferState::PreWindow),
             "completed" => Some(TransferState::Completed),
             _ => None,
         }
@@ -107,6 +114,8 @@ pub struct StatusReport {
     pub burned: u64,
     /// Transfers in state `attested`.
     pub attested: u64,
+    /// Transfers in state `pre_window`.
+    pub pre_window: u64,
     /// Transfers in state `completed`.
     pub completed: u64,
     /// Unresolved alerts.
@@ -273,6 +282,7 @@ impl Store {
             components,
             burned: 0,
             attested: 0,
+            pre_window: 0,
             completed: 0,
             open_alerts: AlertCounts::default(),
         };
@@ -288,6 +298,7 @@ impl Store {
             match TransferState::from_db(&state) {
                 Some(TransferState::Burned) => report.burned = n,
                 Some(TransferState::Attested) => report.attested = n,
+                Some(TransferState::PreWindow) => report.pre_window = n,
                 Some(TransferState::Completed) => report.completed = n,
                 None => {}
             }

@@ -32,7 +32,7 @@ impl Db {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.db");
         let mut store = Store::open(&path).unwrap();
-        let c = store.init_cursor(BASE, "base", 100, NOW).unwrap();
+        let c = store.init_cursor(BASE, "base", 100, 0, NOW).unwrap();
         assert_eq!((c.start_height, c.final_height), (101, 100));
         Db {
             _dir: dir,
@@ -502,7 +502,7 @@ fn store_tail_scope_ignores_rows_outside_scope() {
 #[test]
 fn store_scope_ignores_other_chains() {
     let mut db = Db::new();
-    db.store.init_cursor(SOLANA, "solana", 100, NOW).unwrap();
+    db.store.init_cursor(SOLANA, "solana", 100, 0, NOW).unwrap();
     db.store
         .apply_scan(
             SOLANA,
@@ -616,15 +616,15 @@ fn store_chain_state_bookkeeping() {
 #[test]
 fn store_init_cursor_is_idempotent() {
     let mut db = Db::new();
-    let again = db.store.init_cursor(BASE, "base", 999, NOW + 5).unwrap();
+    let again = db.store.init_cursor(BASE, "base", 999, 0, NOW + 5).unwrap();
     assert_eq!((again.start_height, again.final_height), (101, 100));
     assert!(matches!(
-        db.store.init_cursor(BASE, "other", 100, NOW),
+        db.store.init_cursor(BASE, "other", 100, 0, NOW),
         Err(StoreError::ConfigMismatch(_))
     ));
     assert!(db.store.cursor(SOLANA).unwrap().is_none());
     // A backfill start of h gives final_height = h - 1.
-    let c = db.store.init_cursor(SOLANA, "solana", 41, NOW).unwrap();
+    let c = db.store.init_cursor(SOLANA, "solana", 41, 0, NOW).unwrap();
     assert_eq!((c.start_height, c.final_height), (42, 41));
 }
 
@@ -644,6 +644,71 @@ fn store_record_health_counts_failures() {
     db.store.record_health("ingest:base", Ok(()), 40).unwrap();
     let row = dump(&db.raw(), "health").remove(0).clone();
     assert_eq!(row[1..], ["10", "40", "boom2", "30", "0"]);
+}
+
+#[test]
+fn store_start_components_resets_run() {
+    let mut db = Db::new();
+    db.store.record_health("ingest:base", Ok(()), 10).unwrap();
+    for t in 20..25 {
+        db.store
+            .record_health("ingest:base", Err("boom"), t)
+            .unwrap();
+    }
+    db.store.record_health("old:gone", Ok(()), 10).unwrap();
+    let row = dump(&db.raw(), "health").remove(0);
+    // component, started_at, last_ok_at, last_error, last_error_at, consecutive_failures
+    assert_eq!(row[1..], ["10", "10", "boom", "24", "5"]);
+
+    db.store
+        .start_components(&["ingest:base", "resolver"], 1000)
+        .unwrap();
+    let rows = dump(&db.raw(), "health");
+    assert_eq!(rows.len(), 2, "the unlisted row is deleted: {rows:?}");
+    assert_eq!(rows[0][0], "ingest:base");
+    assert_eq!(rows[0][1..], ["1000", "10", "boom", "24", "0"]);
+    assert_eq!(rows[1][0], "resolver");
+    assert_eq!(rows[1][1..], ["1000", "NULL", "NULL", "NULL", "0"]);
+
+    // A later record_health never changes started_at.
+    db.store
+        .record_health("ingest:base", Err("again"), 1100)
+        .unwrap();
+    db.store.record_health("resolver", Ok(()), 1200).unwrap();
+    let rows = dump(&db.raw(), "health");
+    assert_eq!(rows[0][1..], ["1000", "10", "again", "1100", "1"]);
+    assert_eq!(rows[1][1..], ["1000", "1200", "NULL", "NULL", "0"]);
+
+    // An empty list clears the table.
+    db.store.start_components(&[], 2000).unwrap();
+    assert!(dump(&db.raw(), "health").is_empty());
+}
+
+#[test]
+fn store_rejects_old_schema_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("v1.db");
+    Connection::open(&path)
+        .unwrap()
+        .pragma_update(None, "user_version", 1)
+        .unwrap();
+    let err = Store::open(&path).err().expect("version 1 is rejected");
+    assert!(matches!(err, StoreError::SchemaVersion(1)), "{err:?}");
+    let text = err.to_string();
+    assert!(text.contains("delete the database file"), "{text}");
+    assert!(text.contains("no migration from version 1"), "{text}");
+    assert!(matches!(
+        Store::open_read_only(&path),
+        Err(StoreError::SchemaVersion(1))
+    ));
+    // A new file gets version 2.
+    let fresh = dir.path().join("new.db");
+    drop(Store::open(&fresh).unwrap());
+    let v: i64 = Connection::open(&fresh)
+        .unwrap()
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .unwrap();
+    assert_eq!(v, 2);
 }
 
 #[test]
@@ -688,7 +753,7 @@ fn store_reopen_keeps_data_and_read_only_cannot_write() {
 #[test]
 fn transfers_view_states() {
     let mut db = Db::new();
-    db.store.init_cursor(SOLANA, "solana", 40, NOW).unwrap();
+    db.store.init_cursor(SOLANA, "solana", 40, 0, NOW).unwrap();
     // Three Base burns: completed (nonce 9), attested (nonce 7), burned.
     db.tail(
         100,
@@ -853,7 +918,7 @@ fn store_status_report() {
 async fn store_shared_store_runs_on_blocking_pool() {
     let shared = SharedStore::from_store(Store::open_in_memory().unwrap());
     let cursor = shared
-        .run(|s| s.init_cursor(BASE, "base", 5, NOW))
+        .run(|s| s.init_cursor(BASE, "base", 5, 0, NOW))
         .await
         .unwrap();
     assert_eq!(cursor.final_height, 5);
@@ -931,4 +996,123 @@ fn store_no_cursor_error() {
         assert!(matches!(err, StoreError::NoCursor { domain: 5 }), "{err}");
     }
     assert_eq!(db.count("SELECT COUNT(*) FROM chain_state"), 1);
+}
+
+fn transfer_state(db: &Db, tx: &str) -> String {
+    db.raw()
+        .query_row(
+            "SELECT state FROM transfers WHERE burn_tx = ?1",
+            [tx],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+#[test]
+fn transfers_view_pre_window_state() {
+    let mut db = Db::new();
+    // Base burn at height 105 has block_time 1_700_000_105.
+    let burn_time = 1_700_000_105i64;
+    db.store
+        .init_cursor(SOLANA, "solana", 40, burn_time - 59, NOW)
+        .unwrap();
+    db.tail(100, 200, &[burn_event(6, "0xb", 0, 105, 10)]);
+    let raw = db.raw();
+    raw.execute(
+        "UPDATE burns SET nonce = x'0909090909090909090909090909090909090909090909090909090909090909',
+            attestation_status = 'complete'",
+        [],
+    )
+    .unwrap();
+    // The destination window starts 59 s before the burn: inside the margin.
+    assert_eq!(transfer_state(&db, "0xb"), "pre_window");
+    // 60 s before the burn: covered, so the burn is simply attested.
+    raw.execute(
+        "UPDATE chain_state SET start_time = ?1 WHERE domain = 5",
+        [burn_time - 60],
+    )
+    .unwrap();
+    assert_eq!(transfer_state(&db, "0xb"), "attested");
+    // A burn that is not attested yet is `burned`, whatever the window.
+    raw.execute(
+        "UPDATE chain_state SET start_time = ?1 WHERE domain = 5",
+        [burn_time + 1000],
+    )
+    .unwrap();
+    raw.execute("UPDATE burns SET attestation_status = 'pending'", [])
+        .unwrap();
+    assert_eq!(transfer_state(&db, "0xb"), "burned");
+    raw.execute("UPDATE burns SET attestation_status = 'complete'", [])
+        .unwrap();
+    assert_eq!(transfer_state(&db, "0xb"), "pre_window");
+
+    // A receive that shows up later inside the window completes it.
+    db.store
+        .apply_scan(
+            SOLANA,
+            Scope::Tail {
+                after: 40,
+                through: 300,
+            },
+            &[receive_event(5, "sigR", 0, 205, 9, 10)],
+            NOW,
+        )
+        .unwrap();
+    assert_eq!(transfer_state(&db, "0xb"), "completed");
+
+    // The status report and the filter know the state.
+    raw.execute("DELETE FROM receives WHERE tx_id = 'sigR'", [])
+        .unwrap();
+    assert_eq!(db.store.status_report(NOW).unwrap().pre_window, 1);
+    let rows = db
+        .store
+        .list_transfers(&TransferFilter {
+            state: Some(TransferState::PreWindow),
+            limit: 10,
+        })
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].state, TransferState::PreWindow);
+}
+
+#[test]
+fn coverage_margin_matches_view_literal() {
+    let schema = include_str!("../src/store/schema.sql");
+    let needle = "b.block_time < d.start_time + ";
+    let at = schema
+        .find(needle)
+        .expect("pre_window condition in the view");
+    let literal: String = schema[at + needle.len()..]
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
+    assert_eq!(
+        literal.parse::<i64>().unwrap(),
+        bridge_watcher::store::COVERAGE_MARGIN_SECS
+    );
+}
+
+#[test]
+fn start_time_is_stable_across_restart() {
+    let mut db = Db::new();
+    let first = db
+        .store
+        .init_cursor(SOLANA, "solana", 500, 1_234, NOW)
+        .unwrap();
+    assert_eq!((first.start_height, first.start_time), (501, 1_234));
+
+    // Same process: later values are ignored.
+    let again = db
+        .store
+        .init_cursor(SOLANA, "solana", 900, 9_999, NOW + 1)
+        .unwrap();
+    assert_eq!((again.start_height, again.start_time), (501, 1_234));
+
+    // After a restart (reopen the file), even another config start is ignored.
+    let mut reopened = Store::open(&db.path).unwrap();
+    let c = reopened
+        .init_cursor(SOLANA, "solana", 1_000, 5_555, NOW + 2)
+        .unwrap();
+    assert_eq!((c.start_height, c.start_time), (501, 1_234));
+    assert_eq!(reopened.cursor(SOLANA).unwrap().unwrap().start_time, 1_234);
 }

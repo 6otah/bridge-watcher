@@ -130,6 +130,71 @@ fn config_rejects_iris_rate_above_cap() {
 }
 
 #[test]
+fn config_rejects_mint_lookups_above_max() {
+    let bad = "[monitor]
+mint_without_burn_lookups = 7
+[iris]
+orphan_max_lookups = 6
+";
+    assert!(matches!(
+        Config::from_toml(bad),
+        Err(ConfigError::Invalid(_))
+    ));
+    let edge = "[monitor]
+mint_without_burn_lookups = 6
+[iris]
+orphan_max_lookups = 6
+";
+    assert!(Config::from_toml(edge).is_ok());
+}
+
+#[test]
+fn config_orphan_and_snapshot_settings() {
+    let c = Config::from_toml("").unwrap();
+    assert_eq!(
+        (
+            c.iris.orphan_retry_secs,
+            c.iris.orphan_batch,
+            c.monitor.snapshot_limit
+        ),
+        (600, 10, 1000)
+    );
+    let c = Config::from_toml(
+        "[iris]
+orphan_retry_secs = 60
+orphan_batch = 3
+[monitor]
+snapshot_limit = 50
+",
+    )
+    .unwrap();
+    assert_eq!(
+        (
+            c.iris.orphan_retry_secs,
+            c.iris.orphan_batch,
+            c.monitor.snapshot_limit
+        ),
+        (60, 3, 50)
+    );
+    for text in [
+        "[iris]
+orphan_batch = 0
+",
+        "[iris]
+orphan_retry_secs = 0
+",
+        "[monitor]
+snapshot_limit = 0
+",
+    ] {
+        assert!(
+            matches!(Config::from_toml(text), Err(ConfigError::Invalid(_))),
+            "accepted {text:?}"
+        );
+    }
+}
+
+#[test]
 fn config_rejects_invalid_values() {
     for text in [
         "[evm]\ndomain = 5\n",
@@ -145,6 +210,35 @@ fn config_rejects_invalid_values() {
         "[alerts]\nmin_severity = \"loud\"\n",
     ] {
         assert!(Config::from_toml(text).is_err(), "accepted: {text}");
+    }
+}
+
+/// One case per cross-field rule of `Config::validate` (review F5). Each must
+/// fail the validation, not the parser.
+#[test]
+fn config_rejects_each_cross_field_rule() {
+    for text in [
+        "[monitor]\nmint_without_burn_lookups = 7\n[iris]\norphan_max_lookups = 6\n",
+        "[monitor]\nmint_without_burn_lookups = 0\n",
+        "[monitor]\nlatency_min_samples = 300\nlatency_window = 200\n",
+        "[evm]\nrpc_url = \"ftp://example.com/\"\n",
+        "[solana]\nrpc_url = \"not a url\"\n",
+        "[evm]\nrpc_url = \"https://:99/path\"\n",
+        "[iris]\nbase_url = \"example.com\"\n",
+        "[evm]\nattestation_sla_fast_secs = 0\n",
+        "[evm]\nattestation_sla_standard_secs = 0\n",
+        "[solana]\nattestation_sla_fast_secs = 0\n",
+        "[solana]\nattestation_sla_standard_secs = 0\n",
+        "[evm]\nfinality_lag_alert = 0\n",
+        "[solana]\nfinality_lag_alert = 0\n",
+        "[iris]\norphan_grace_secs = -1\n",
+        "[alerts]\nrenotify_after_secs = 0\n",
+    ] {
+        let err = Config::from_toml(text).err();
+        assert!(
+            matches!(err, Some(ConfigError::Invalid(_))),
+            "not rejected by validation: {text}: {err:?}"
+        );
     }
 }
 

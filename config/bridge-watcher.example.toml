@@ -47,19 +47,22 @@ initial_backoff_secs = 10
 max_backoff_secs = 120
 lockout_secs = 310                      # Iris lockout is 300 s
 max_txs_per_tick = 20
-orphan_grace_secs = 600
-orphan_max_lookups = 6
+orphan_grace_secs = 600                 # orphan receives younger than this are not checked
+orphan_max_lookups = 6                  # counted lookups per orphan
+orphan_retry_secs = 600                 # spacing between lookups of one orphan (also after errors)
+orphan_batch = 10                       # orphans checked per resolver tick
 request_timeout_secs = 15
 
 [monitor]
 interval_secs = 30
 unclaimed_after_secs = 3600
-mint_without_burn_lookups = 3
+mint_without_burn_lookups = 3           # must be <= iris.orphan_max_lookups
 stall_after_secs = 300
 latency_window = 200
 latency_min_samples = 20
 latency_mad_k = 6.0
 latency_min_excess_secs = 120
+snapshot_limit = 1000                   # rows per candidate list
 
 [alerts]
 min_severity = "warning"                # info | warning | critical; lower ones are only logged

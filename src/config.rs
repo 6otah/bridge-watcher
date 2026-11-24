@@ -274,8 +274,12 @@ pub struct IrisConfig {
     pub max_txs_per_tick: usize,
     /// Age of an orphan receive before the source lookup starts.
     pub orphan_grace_secs: i64,
-    /// Lookups per orphan receive.
+    /// Counted lookups per orphan receive.
     pub orphan_max_lookups: u32,
+    /// Spacing between lookups of one orphan, also after an error.
+    pub orphan_retry_secs: u64,
+    /// Orphans checked per resolver tick.
+    pub orphan_batch: usize,
     /// HTTP timeout.
     pub request_timeout_secs: u64,
 }
@@ -292,6 +296,8 @@ impl Default for IrisConfig {
             max_txs_per_tick: 20,
             orphan_grace_secs: 600,
             orphan_max_lookups: 6,
+            orphan_retry_secs: 600,
+            orphan_batch: 10,
             request_timeout_secs: 15,
         }
     }
@@ -317,6 +323,9 @@ pub struct MonitorConfig {
     pub latency_mad_k: f64,
     /// Minimum excess over the median in seconds.
     pub latency_min_excess_secs: i64,
+    /// Rows per monitor candidate list; a longer list is truncated and
+    /// reported as `monitor_truncated`.
+    pub snapshot_limit: usize,
 }
 
 impl Default for MonitorConfig {
@@ -330,6 +339,7 @@ impl Default for MonitorConfig {
             latency_min_samples: 20,
             latency_mad_k: 6.0,
             latency_min_excess_secs: 120,
+            snapshot_limit: 1000,
         }
     }
 }
@@ -534,6 +544,14 @@ impl Config {
         require(
             i.orphan_grace_secs >= 0,
             "iris.orphan_grace_secs must not be negative",
+        )?;
+        require(
+            i.orphan_batch >= 1 && i.orphan_retry_secs >= 1 && i.orphan_max_lookups >= 1,
+            "iris.orphan_batch, orphan_retry_secs and orphan_max_lookups must be at least 1",
+        )?;
+        require(
+            m.snapshot_limit >= 1,
+            "monitor.snapshot_limit must be at least 1",
         )?;
         Ok(())
     }
