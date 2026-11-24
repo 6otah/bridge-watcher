@@ -1,0 +1,67 @@
+# Mainnet configuration for the Base <-> Solana CCTP V2 pair.
+# Secrets never go here. Use the environment (see .env.example):
+#   BW_EVM_RPC_URL, BW_SOLANA_RPC_URL (URLs with API keys), TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
+
+[database]
+path = "data/bridge-watcher.db"
+
+[evm]                                   # the EVM chain of the pair (Base)
+name = "base"
+domain = 6
+rpc_url = "https://base-rpc.publicnode.com"   # env BW_EVM_RPC_URL overrides
+message_transmitter = "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64"
+token_messenger = "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d"
+# start_height = 61640000               # optional, first run only; absent = current finalized block (no backfill)
+poll_interval_secs = 10
+requests_per_second = 10
+max_log_range = 10000
+tail_max = 10000                        # blocks above finalized that the tail scan covers
+max_scans_per_tick = 10
+finality_lag_alert = 9000               # blocks; ~30 min at 200 ms
+attestation_sla_fast_secs = 300
+attestation_sla_standard_secs = 3600    # Circle: ~15-19 min for Base Standard
+
+[solana]
+name = "solana"
+domain = 5
+rpc_url = "https://api.mainnet-beta.solana.com"  # env BW_SOLANA_RPC_URL overrides
+message_transmitter = "CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC"
+token_messenger_minter = "CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe"
+signature_address = "CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC"  # default = message_transmitter
+# start_height = 473300000              # optional slot, first run only; absent = current finalized slot (no backfill)
+poll_interval_secs = 10
+requests_per_second = 4
+max_tx_fetch_per_scan = 40
+final_margin = 16                       # slots subtracted from the finalized slot
+tail_max = 300                          # slots
+max_scans_per_tick = 10
+finality_lag_alert = 150                # slots
+attestation_sla_fast_secs = 120
+attestation_sla_standard_secs = 300     # Circle: ~17 s for Solana Standard
+
+[iris]
+base_url = "https://iris-api.circle.com"
+requests_per_second = 2.0               # validation: must be <= 10 (Iris limit is 40)
+poll_interval_secs = 5
+initial_backoff_secs = 10
+max_backoff_secs = 120
+lockout_secs = 310                      # Iris lockout is 300 s
+max_txs_per_tick = 20
+orphan_grace_secs = 600
+orphan_max_lookups = 6
+request_timeout_secs = 15
+
+[monitor]
+interval_secs = 30
+unclaimed_after_secs = 3600
+mint_without_burn_lookups = 3
+stall_after_secs = 300
+latency_window = 200
+latency_min_samples = 20
+latency_mad_k = 6.0
+latency_min_excess_secs = 120
+
+[alerts]
+min_severity = "warning"                # info | warning | critical; lower ones are only logged
+renotify_after_secs = 3600
+notify_interval_secs = 5
